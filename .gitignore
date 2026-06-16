@@ -1,0 +1,19 @@
+# Environment
+.env
+backend/.env
+
+# Data files
+backend/data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# React
+frontend/node_modules/
+frontend/build/
+
+# VS Code
+.vscode/
