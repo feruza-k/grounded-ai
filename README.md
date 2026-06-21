@@ -1,4 +1,4 @@
-# anchor
+# Grounded
 
 RAG-powered Q&A assistant that grounds answers in official documentation, built with Azure AI Search, Azure OpenAI, and Azure AI Language.
 
@@ -59,6 +59,7 @@ AZURE_LANGUAGE_ENDPOINT=
 AZURE_LANGUAGE_KEY=
 AZURE_CONTENT_SAFETY_ENDPOINT=
 AZURE_CONTENT_SAFETY_KEY=
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT=
 ```
 
 Run the backend:

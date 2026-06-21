@@ -17,3 +17,6 @@ frontend/build/
 
 # VS Code
 .vscode/
+
+.DS_Store
+backend/.DS_Store
