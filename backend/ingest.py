@@ -17,6 +17,8 @@ from azure.core.credentials import AzureKeyCredential
 import pathlib
 from pypdf import PdfReader
 from openai import AzureOpenAI
+import re
+
 
 load_dotenv()
 
@@ -81,8 +83,9 @@ def chunk_pdf(file_path, chunk_size=1000, overlap=100):
     while start<len(text):
         end = start + chunk_size
         chunk = text[start:end]
+        safe_stem = re.sub(r'[^a-zA-Z0-9_\-=]', '_', file_path.stem)
         chunks.append({
-            "id": f"{file_path.stem}_{start}",
+            "id": f"{safe_stem}_{start}",
             "content":chunk,
             "source": str(file_path),
             "embedding": embed(chunk),

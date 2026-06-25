@@ -22,7 +22,7 @@ You ask a question about a topic covered in the indexed documentation. The syste
 - **Backend:** FastAPI, Python
 - **Frontend:** React
 - **Retrieval:** Azure AI Search (vector + semantic search)
-- **Generation:** Azure OpenAI (gpt-4.1-mini)
+- **Generation:** Azure OpenAI (gpt-5-mini)
 - **Query enhancement:** Azure AI Language (entity extraction)
 - **Safety:** Azure AI Content Safety
 
@@ -32,7 +32,7 @@ You ask a question about a topic covered in the indexed documentation. The syste
 - Python 3.11+
 - Node.js 18+
 - Azure subscription with the following resources deployed:
-  - Azure AI Foundry project (gpt-4.1-mini deployed)
+  - Azure AI Foundry project (gpt-5-mini deployed)
   - Azure AI Search
   - Azure AI Language
   - Azure AI Content Safety
