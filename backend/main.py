@@ -1,15 +1,16 @@
 import os 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel 
 
-from openai import AzureOpenAI
+from openai import AzureOpenAI, BadRequestError
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
 from azure.search.documents.models import VectorizedQuery
 from azure.ai.textanalytics import TextAnalyticsClient
 from azure.ai.contentsafety import ContentSafetyClient
+from azure.ai.contentsafety.models import AnalyzeTextOptions
 
 load_dotenv()
 
@@ -55,8 +56,17 @@ def embed(text: str) -> list[float]:
     )
     return response.data[0].embedding
 
+def check_safety(text: str) -> bool:
+    response = content_safety_client.analyze_text(AnalyzeTextOptions(text=text))
+    for category in response.categories_analysis:
+        if category.severity >= 2:
+            return False
+    return True
+
 @app.post("/ask")
 def ask(request: AskRequest):
+    if not check_safety(request.question):
+        raise HTTPException(status_code=400, detail="Input flagged by content safety.")
     # Step 1: Entity Extraction
     entity_response = language_client.recognize_entities([request.question])
     entities = [e.text for e in entity_response[0].entities]
@@ -95,12 +105,20 @@ def ask(request: AskRequest):
     ]
 
     #Step 4: Generate answer using Azure OpenAI
-    completion = openai_client.chat.completions.create(
-        messages=messages,
-        model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
-    )
+    try:
+        completion = openai_client.chat.completions.create(
+            messages=messages,
+            model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+            )
+    except BadRequestError as e:
+        raise HTTPException(status_code=400, detail="Request blocked by Azure OpenAI content policy.")
+    
+    
     answer = completion.choices[0].message.content
+    if not check_safety(answer):
+        raise HTTPException(status_code=400, detail="Output flagged by content safety.")
     citation = list({r['source'] for r in results})
 
     return {"answer": answer, "citation": citation}
+
 
