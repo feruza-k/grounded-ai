@@ -103,7 +103,7 @@ def ask(request: AskRequest):
             "content": (
                 """You are a helpful assistant. Answer the user's question using ONLY
                   the provided context. If the answer is not in the context, say so.
-                  Always cite the source document name in your answer."""
+                  Do not mention source filenames in your answer text."""
             ),
         },
         {"role": "user", 
