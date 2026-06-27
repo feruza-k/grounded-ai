@@ -26,12 +26,37 @@ app.add_middleware(
 class AskRequest(BaseModel):
     question: str
 
+class QuizRequest(BaseModel):
+    topic: str
+    question_type: str  # "single" or "multi"
+
 class QuizResponse(BaseModel):
     question: str
     options: list[str]
-    answer: str
+    answer: list[str]
     explanation: str
     source: str
+    question_type: str
+    topic: str
+
+
+TOPIC_KEYWORDS = {
+    "plan_manage": "Azure AI resource management monitoring security responsible AI content safety",
+    "generative_ai": "Azure OpenAI generative AI RAG prompt engineering model deployment fine-tuning",
+    "agentic": "Azure AI agent Semantic Kernel AutoGen multi-agent orchestration workflow",
+    "computer_vision": "Azure AI Vision image analysis object detection custom vision video indexer",
+    "nlp": "Azure AI Language natural language processing text analytics speech translation",
+    "knowledge_mining": "Azure AI Search document intelligence indexer skillset knowledge mining",
+}
+
+TOPIC_LABELS = {
+"plan_manage": "Plan and Manage Azure AI Solutions",
+"generative_ai": "Implement Generative AI Solutions",
+"agentic": "Implement Agentic Solutions",
+"computer_vision": "Implement Computer Vision Solutions",
+"nlp": "Implement Natural Language Processing Solutions",
+"knowledge_mining": "Implement Knowledge Mining Solutions",
+}
 
 openai_client = AzureOpenAI(
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
@@ -130,45 +155,64 @@ def ask(request: AskRequest):
 
 
 @app.post("/quiz", response_model=QuizResponse)
-def quiz():
+def quiz(request: QuizRequest):
+    topic_label = TOPIC_LABELS.get(request.topic, request.topic)
+    search_keywords = TOPIC_KEYWORDS.get(request.topic, request.topic)
+
+    query_vector = embed(search_keywords)
+    vector_query = VectorizedQuery(
+        vector=query_vector,
+        k_nearest_neighbors=5,
+        fields="embedding",
+    )
     results = list(search_client.search(
-        search_text="*",
-        top=3,
+        search_text=None,
+        vector_queries=[vector_query],
         select=["content", "source"],
+        top=5,
     ))
 
-    context = "\n\n".join(
-        f"Source: {r['source']}\nContent: {r['content']}" for r in results
-    )
+    context = "\n\n".join(f"Source: {r['source']}\nContent: {r['content']}" for r in results)
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an Azure AI-102 exam question writer. Given study material, generate ONE "
-                "scenario-based multiple-choice question. The question must describe a real-world "
-                "business situation and ask which Azure AI service or approach best solves it. "
-                "Use exactly 4 options labeled A, B, C, D — one clearly correct, three plausible but wrong. "
-                "Respond in this exact format:\n"
-                "Question: <scenario-based question>\n"
-                "A: <option>\n"
-                "B: <option>\n"
-                "C: <option>\n"
-                "D: <option>\n"
-                "Answer: <correct letter>\n"
-                "Explanation: <one sentence explaining why the answer is correct>"
-            ),
-        },
-        {
-            "role": "user",
-            "content": f"Generate a question from this material:\n\n{context}",
-        },
-    ]
+    if request.question_type == "multi":
+        format_instructions = (
+            "Write exactly 5 options labeled A, B, C, D, E. "
+            "EXACTLY TWO options are correct, three are wrong. "
+            "The question must end with: 'Which TWO should you choose? Each correct answer presents part of the solution.'\n"
+            "Answer: <two letters separated by a comma, e.g. A, C>"
+        )
+    else:
+        format_instructions = (
+            "Write exactly 4 options labeled A, B, C, D. "
+            "ONE option is correct, three are plausible but wrong. "
+            "The question must end with: 'What should you do?'\n"
+            "Answer: <single letter>"
+        )
+
+    system_prompt = (
+        f"You are an Azure AI-102 exam question writer in the style of MeasureUp certification tests. "
+        f"Domain: {topic_label}. "
+        f"Write ONE scenario-based question following these rules:\n"
+        f"- Start with 'You are...' or 'Your company...' to describe a real-world situation\n"
+        f"- Include 'You need to...' to state the requirement clearly\n"
+        f"- Only use services and concepts from the provided study material\n"
+        f"- {format_instructions}\n"
+        f"- Write a detailed explanation: why the correct answer is right AND why each wrong answer is incorrect\n\n"
+        f"Respond in EXACTLY this format:\n"
+        f"Question: <full scenario question>\n"
+        f"A: <option>\nB: <option>\nC: <option>\nD: <option>\n"
+        f"{'E: <option>' + chr(10) if request.question_type == 'multi' else ''}"
+        f"Answer: <answer>\n"
+        f"Explanation: <detailed explanation>"
+    )
 
     try:
         completion = openai_client.chat.completions.create(
             model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
-            messages=messages,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Generate a question from this material:\n\n{context}"},
+            ],
         )
     except BadRequestError:
         raise HTTPException(status_code=400, detail="Quiz generation blocked by content policy.")
@@ -176,12 +220,20 @@ def quiz():
     raw = completion.choices[0].message.content
     lines = [l.strip() for l in raw.strip().splitlines() if l.strip()]
 
-    question = lines[0].replace("Question: ", "")
-    options = [l for l in lines if l.startswith(("A:", "B:", "C:", "D:"))]
-    answer_line = next((l for l in lines if l.startswith("Answer:")), "")
-    answer = answer_line.replace("Answer: ", "")
-    explanation_line = next((l for l in lines if l.startswith("Explanation:")), "")
-    explanation = explanation_line.replace("Explanation: ", "")
+    question = next((l.replace("Question: ", "") for l in lines if l.startswith("Question:")), "")
+    options = [l for l in lines if l.startswith(("A:", "B:", "C:", "D:", "E:"))]
+    answer_line = next((l for l in lines if l.startswith("Answer:")),"")
+    answer = [a.strip() for a in answer_line.replace("Answer: ", "").split(",")]
+    explanation_idx = next((i for i, l in enumerate(lines) if l.startswith("Explanation:")), -1)
+    explanation = "".join(lines[explanation_idx:]).replace("Explanation: ", "") if explanation_idx >= 0 else ""
     source = results[0]["source"] if results else ""
 
-    return QuizResponse(question=question, options=options, answer=answer, explanation=explanation, source=source)
+    return QuizResponse(
+        question=question,
+        options=options,
+        answer=answer,
+        explanation=explanation,
+        source=source,
+        question_type=request.question_type,
+        topic=request.topic,
+    )
