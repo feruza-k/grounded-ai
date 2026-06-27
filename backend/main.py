@@ -62,6 +62,8 @@ openai_client = AzureOpenAI(
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
     api_key=os.getenv("AZURE_OPENAI_KEY"),
     api_version="2024-02-01",
+    timeout=30.0,  # fail fast instead of hanging indefinitely
+    max_retries=1,
 )
 
 search_client = SearchClient(
@@ -221,7 +223,8 @@ def quiz(request: QuizRequest):
     lines = [l.strip() for l in raw.strip().splitlines() if l.strip()]
 
     question = next((l.replace("Question: ", "") for l in lines if l.startswith("Question:")), "")
-    options = [l for l in lines if l.startswith(("A:", "B:", "C:", "D:", "E:"))]
+    answer_idx = next((i for i, l in enumerate(lines) if l.startswith("Answer:")), len(lines))
+    options = [l for l in lines[:answer_idx] if l.startswith(("A:", "B:", "C:", "D:", "E:"))]
     answer_line = next((l for l in lines if l.startswith("Answer:")),"")
     answer = [a.strip() for a in answer_line.replace("Answer: ", "").split(",")]
     explanation_idx = next((i for i, l in enumerate(lines) if l.startswith("Explanation:")), -1)
